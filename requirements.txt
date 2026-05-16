@@ -16,3 +16,6 @@ pyarrow
 # REST API
 fastapi
 uvicorn
+
+# Kafka plugin
+confluent-kafka
