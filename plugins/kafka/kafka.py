@@ -148,7 +148,7 @@ class KafkaStreamer(Plugin):
         sent_count = 0
         for comment in comments:
             # Use parent ID = post Id as message key for partitioning
-            key = comment.get('parent_id', '')
+            key = comment.get('comment_id', '')
             self._send_to_kafka(self.comments_topic, key, comment)
             sent_count += 1
 
