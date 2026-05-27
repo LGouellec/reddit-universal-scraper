@@ -23,3 +23,5 @@ duckdb
 
 # Kafka plugin
 confluent-kafka
+
+beautifulsoup4

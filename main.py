@@ -19,6 +19,8 @@ import tempfile
 from urllib.parse import urlparse
 from pathlib import Path
 from proxy import ProxyRotator
+import bs4
+
 
 # --- CONFIGURATION ---
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -315,7 +317,7 @@ def scrape_comments(permalink, max_depth=3):
             url = f"{permalink}.json?limit=100"
 
         response = SESSION.get(url, timeout=15)
-        if response.status_code == 403:
+        if response.status_code > 300:
             # Try RSS feed as fallback for 403 errors
             print(f"   + Got 403, trying RSS feed...")
             if not permalink.startswith('http'):
@@ -323,18 +325,18 @@ def scrape_comments(permalink, max_depth=3):
             else:
                 rss_url = f"{permalink}.rss?limit=100"
 
-            rss_response = SESSION.get(rss_url, timeout=15)
-            if rss_response.status_code == 200:
-                comments = parse_comments_from_rss(rss_response.content, rss_url)
+            response = SESSION.get(rss_url, timeout=15)
+            if response.status_code == 200:
+                comments = parse_comments_from_rss(response.content, rss_url)
                 if len(comments) > 0:
                     print(f"   + Scraped {len(comments)} comments from RSS")
                 return comments
             else:
-                print(f"   + RSS feed also failed ({rss_response.status_code})")
+                print(f"   + RSS feed also failed ({response.status_code})")
                 return comments
 
         if response.status_code != 200:
-            print(f"   + Bad response ({response.status_code}) - {response.content}")
+            print(f"   + Bad response ({response.status_code}) - {response.content[:50]}")
             return comments
 
         data = response.json()
@@ -376,12 +378,12 @@ def parse_comments_from_rss(rss_content, post_permalink):
                 id_elem = entry.find('atom:id', namespace)
 
                 # Skip if essential elements are missing
-                if not all([author_elem, content_elem]):
-                    continue
+                # if not all([author_elem, content_elem]):
+                #     continue
 
                 author = author_elem.text
                 # Skip AutoModerator
-                if author == 'AutoModerator':
+                if author == '/u/AutoModerator':
                     continue
 
                 # Extract comment ID from the entry ID or link
@@ -393,17 +395,20 @@ def parse_comments_from_rss(rss_content, post_permalink):
                         comment_id = parts[-1]
 
                 # Parse published date (RSS uses ISO format, keep as-is)
-                if published_elem:
+                if published_elem is not None and len(published_elem) > 0:
                     created_utc = published_elem.text
                 else:
                     created_utc = updated_elem.text
+
+                soup = bs4.BeautifulSoup(content_elem.text or "", 'html.parser')
+                text = soup.get_text(separator=' ', strip=True)
 
                 comment = {
                     "post_permalink": post_permalink,
                     "comment_id": comment_id,
                     "parent_id": parent_post_id,
                     "author": author,
-                    "body": content_elem.text or "",
+                    "body": text or "",
                     "score": 0,  # RSS doesn't provide score
                     "created_utc": created_utc,
                     "depth": 0,  # RSS doesn't provide depth info
