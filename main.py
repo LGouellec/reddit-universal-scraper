@@ -2,6 +2,8 @@
 🤖 Universal Reddit Scraper Suite
 Full-featured scraper with analytics, dashboard, notifications, and scheduling.
 """
+import logging
+
 import requests
 import pandas as pd
 import datetime
@@ -16,6 +18,7 @@ import subprocess
 import tempfile
 from urllib.parse import urlparse
 from pathlib import Path
+from proxy import ProxyRotator
 
 # --- CONFIGURATION ---
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -28,6 +31,17 @@ MIRRORS = [
     "https://libreddit.northboot.xyz",
     "https://redlib.tux.pizza"
 ]
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+proxyRotator: ProxyRotator = None
+
+if bool(os.environ.get("ENABLE_PROXY", "false")):
+    print("Proxy rotator is configured")
+    proxyRotator = ProxyRotator(auto_fetch_proxies=True)
 
 SEEN_URLS = set()
 SESSION = requests.Session()
@@ -302,6 +316,7 @@ def scrape_comments(permalink, max_depth=3):
         
         response = SESSION.get(url, timeout=15)
         if response.status_code != 200:
+            print(f"   + Bad response ({response.status_code}) - {response.content}")
             return comments
         
         data = response.json()
@@ -611,6 +626,7 @@ def run_monitor(target, is_user=False, limit:int=100, use_plugins=False, scrape_
     print(f"[{datetime.datetime.now()}] 📡 Checking RSS for {prefix}/{target}...")
     
     try:
+        add_proxy()
         response = SESSION.get(rss_url, timeout=15)
         
         if response.status_code != 200:
@@ -648,6 +664,7 @@ def run_monitor(target, is_user=False, limit:int=100, use_plugins=False, scrape_
 
             if scrape_comments_flag:
                 print(f"   💬 Fetching comments for: {p['title'][:40]}...")
+                add_proxy()
                 temp_comments = scrape_comments(p['permalink'].rstrip("/"), max_depth=5)
                 comments.extend(temp_comments)
                 p['num_comments']=len(temp_comments)
@@ -678,6 +695,15 @@ def run_monitor(target, is_user=False, limit:int=100, use_plugins=False, scrape_
 
     except Exception as e:
         print(f"❌ Monitor Error: {e}")
+
+
+def add_proxy():
+    if proxyRotator:
+        proxy = proxyRotator.get_proxy_sync()
+        proxy_url = urlparse(proxy)
+        # Extract the protocol
+        print(f"Proxy used {proxy}")
+        SESSION.proxies = {proxy_url.scheme, proxy}
 
 # --- CLI ---
 def main():

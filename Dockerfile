@@ -23,6 +23,7 @@ COPY analytics/ ./analytics/
 COPY alerts/ ./alerts/
 COPY dashboard/ ./dashboard/
 COPY export/ ./export/
+COPY proxy/ ./proxy/
 COPY scheduler/ ./scheduler/
 COPY scraper/ ./scraper/
 COPY search/ ./search/
