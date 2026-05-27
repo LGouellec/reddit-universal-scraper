@@ -307,30 +307,118 @@ def download_post_media(post_data, dirs, post_id):
 def scrape_comments(permalink, max_depth=3):
     """Scrapes comments from a post."""
     comments = []
-    
+
     try:
         if not permalink.startswith('http'):
             url = f"https://old.reddit.com{permalink}.json?limit=100"
         else:
             url = f"{permalink}.json?limit=100"
-        
+
         response = SESSION.get(url, timeout=15)
+        if response.status_code == 403:
+            # Try RSS feed as fallback for 403 errors
+            print(f"   + Got 403, trying RSS feed...")
+            if not permalink.startswith('http'):
+                rss_url = f"https://old.reddit.com{permalink}.rss?limit=100"
+            else:
+                rss_url = f"{permalink}.rss?limit=100"
+
+            rss_response = SESSION.get(rss_url, timeout=15)
+            if rss_response.status_code == 200:
+                comments = parse_comments_from_rss(rss_response.content, rss_url)
+                if len(comments) > 0:
+                    print(f"   + Scraped {len(comments)} comments from RSS")
+                return comments
+            else:
+                print(f"   + RSS feed also failed ({rss_response.status_code})")
+                return comments
+
         if response.status_code != 200:
             print(f"   + Bad response ({response.status_code}) - {response.content}")
             return comments
-        
+
         data = response.json()
-        
+
         if len(data) > 1:
             comment_data = data[1]['data']['children']
             comments = parse_comments(comment_data, permalink, depth=0, max_depth=max_depth)
-    
+
     except Exception as e:
         pass
-    
+
     if len(comments) > 0:
         print(f"   + Scraped {len(comments)} comments")
-    
+
+    return comments
+
+def parse_comments_from_rss(rss_content, post_permalink):
+    """Parses comments from RSS/Atom feed."""
+    comments = []
+
+    try:
+        # Extract post ID from permalink to construct parent_id
+        # Format: /r/subreddit/comments/POST_ID/title/
+        # Parent ID is t3_POST_ID (t3 prefix for submissions)
+        import re
+        post_id_match = re.search(r'/comments/([a-z0-9]+)/', post_permalink)
+        parent_post_id = f"t3_{post_id_match.group(1)}" if post_id_match else ""
+
+        root = ET.fromstring(rss_content)
+        namespace = {'atom': 'http://www.w3.org/2005/Atom'}
+
+        for entry in root.findall('atom:entry', namespace):
+            try:
+                # Extract comment data from RSS entry
+                author_elem = entry.find('atom:author/atom:name', namespace)
+                content_elem = entry.find('atom:content', namespace)
+                published_elem = entry.find('atom:published', namespace)
+                updated_elem = entry.find('atom:updated', namespace)
+                id_elem = entry.find('atom:id', namespace)
+
+                # Skip if essential elements are missing
+                if not all([author_elem, content_elem]):
+                    continue
+
+                author = author_elem.text
+                # Skip AutoModerator
+                if author == 'AutoModerator':
+                    continue
+
+                # Extract comment ID from the entry ID or link
+                comment_id = ""
+                if id_elem is not None and id_elem.text:
+                    # ID format is usually like: t1_abc123
+                    parts = id_elem.text.split('_')
+                    if len(parts) > 1:
+                        comment_id = parts[-1]
+
+                # Parse published date (RSS uses ISO format, keep as-is)
+                if published_elem:
+                    created_utc = published_elem.text
+                else:
+                    created_utc = updated_elem.text
+
+                comment = {
+                    "post_permalink": post_permalink,
+                    "comment_id": comment_id,
+                    "parent_id": parent_post_id,
+                    "author": author,
+                    "body": content_elem.text or "",
+                    "score": 0,  # RSS doesn't provide score
+                    "created_utc": created_utc,
+                    "depth": 0,  # RSS doesn't provide depth info
+                    "is_submitter": False,
+                }
+                
+                comments.append(comment)
+
+            except Exception as e:
+                # Skip malformed entries
+                continue
+
+    except Exception as e:
+        print(f"   + Error parsing RSS comments: {e}")
+
     return comments
 
 def parse_comments(comment_list, post_permalink, depth=0, max_depth=3):
@@ -343,8 +431,11 @@ def parse_comments(comment_list, post_permalink, depth=0, max_depth=3):
     for item in comment_list:
         if item['kind'] != 't1':
             continue
-        
+    
         c = item['data']
+
+        if c.get('author') == 'AutoModerator':
+            continue
         
         comment = {
             "post_permalink": post_permalink,
