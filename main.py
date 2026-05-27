@@ -39,7 +39,7 @@ logging.basicConfig(
 
 proxyRotator: ProxyRotator = None
 
-if bool(os.environ.get("ENABLE_PROXY", "false")):
+if os.environ.get("ENABLE_PROXY", "false").lower() == "true":
     print("Proxy rotator is configured")
     proxyRotator = ProxyRotator(auto_fetch_proxies=True)
 
