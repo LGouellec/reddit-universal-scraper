@@ -7,6 +7,7 @@ import asyncio
 import logging
 import os
 import random
+import sys
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -514,6 +515,9 @@ class ProxyRotator:
             Result of the coroutine
         """
         try:
+            if sys.platform == 'win32':
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+                
             # Try to get existing event loop
             loop = asyncio.get_event_loop()
             if loop.is_running():
