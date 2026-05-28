@@ -724,13 +724,18 @@ def run_monitor(target, is_user=False, limit:int=100, use_plugins=False, scrape_
         print(f"[{datetime.datetime.now()}] 📡 Checking RSS for {prefix}/{tar}...")
         
         try:
-            add_proxy()
-            response = SESSION.get(rss_url, timeout=15)
-            
-            if response.status_code != 200:
-                print(f"❌ RSS blocked (Status {response.status_code}), trying JSON...")
-                run_full_history(tar, 25, is_user, download_media_flag=False, scrape_comments_flag=scrape_comments_flag, use_plugins=use_plugins)
-                return
+            retry = True
+            while retry:
+                add_proxy()
+                response = SESSION.get(rss_url, timeout=15)
+                
+                if response.status_code != 200:
+                    print(f"❌ RSS blocked (Status {response.status_code}), trying JSON...")
+                    time.sleep(5)
+                    #run_full_history(tar, 25, is_user, download_media_flag=False, scrape_comments_flag=scrape_comments_flag, use_plugins=use_plugins)
+                    continue
+                
+                retry = False
 
             root = ET.fromstring(response.content)
             namespace = {'atom': 'http://www.w3.org/2005/Atom'}
