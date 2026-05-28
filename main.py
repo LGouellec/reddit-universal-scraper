@@ -714,83 +714,86 @@ def run_full_history(target, limit, is_user=False, download_media_flag=True,
 # --- MONITOR MODE ---
 def run_monitor(target, is_user=False, limit:int=100, use_plugins=False, scrape_comments_flag=False, csv_output=True):
     prefix = "u" if is_user else "r"
-    if is_user:
-        rss_url = f"https://www.reddit.com/user/{target}/submitted.rss?limit={limit}"
-    else:
-        rss_url = f"https://www.reddit.com/r/{target}/new.rss?limit={limit}"
+    for tar in target.split(','):
 
-    print(f"[{datetime.datetime.now()}] 📡 Checking RSS for {prefix}/{target}...")
-    
-    try:
-        add_proxy()
-        response = SESSION.get(rss_url, timeout=15)
+        if is_user:
+            rss_url = f"https://www.reddit.com/user/{tar}/submitted.rss?limit={limit}"
+        else:
+            rss_url = f"https://www.reddit.com/r/{tar}/new.rss?limit={limit}"
+
+        print(f"[{datetime.datetime.now()}] 📡 Checking RSS for {prefix}/{tar}...")
         
-        if response.status_code != 200:
-            print(f"❌ RSS blocked (Status {response.status_code}), trying JSON...")
-            run_full_history(target, 25, is_user, download_media_flag=False, scrape_comments_flag=scrape_comments_flag, use_plugins=use_plugins)
-            return
+        try:
+            add_proxy()
+            response = SESSION.get(rss_url, timeout=15)
+            
+            if response.status_code != 200:
+                print(f"❌ RSS blocked (Status {response.status_code}), trying JSON...")
+                run_full_history(tar, 25, is_user, download_media_flag=False, scrape_comments_flag=scrape_comments_flag, use_plugins=use_plugins)
+                return
 
-        root = ET.fromstring(response.content)
-        namespace = {'atom': 'http://www.w3.org/2005/Atom'}
-        posts = []
-        comments = []
-        
-        for entry in root.findall('atom:entry', namespace):
-            p = {
-                "id": entry.find('atom:id', namespace).text,
-                "title": entry.find('atom:title', namespace).text,
-                "author": "",
-                "created_utc": entry.find('atom:published', namespace).text,
-                "permalink": entry.find('atom:link', namespace).attrib['href'],
-                "url": entry.find('atom:link', namespace).attrib['href'],
-                "score": 0,
-                "upvote_ratio": 0,
-                "num_comments": 0,
-                "num_crossposts": 0,
-                "selftext": "",
-                "post_type": "unknown",
-                "is_nsfw": False,
-                "is_spoiler": False,
-                "flair": "",
-                "total_awards": 0,
-                "has_media": False,
-                "media_downloaded": False,
-                "source": "Monitor-RSS"
-            }
+            root = ET.fromstring(response.content)
+            namespace = {'atom': 'http://www.w3.org/2005/Atom'}
+            posts = []
+            comments = []
+            
+            for entry in root.findall('atom:entry', namespace):
+                p = {
+                    "id": entry.find('atom:id', namespace).text,
+                    "title": entry.find('atom:title', namespace).text,
+                    "author": "",
+                    "created_utc": entry.find('atom:published', namespace).text,
+                    "permalink": entry.find('atom:link', namespace).attrib['href'],
+                    "url": entry.find('atom:link', namespace).attrib['href'],
+                    "score": 0,
+                    "upvote_ratio": 0,
+                    "num_comments": 0,
+                    "num_crossposts": 0,
+                    "selftext": "",
+                    "post_type": "unknown",
+                    "is_nsfw": False,
+                    "is_spoiler": False,
+                    "flair": "",
+                    "total_awards": 0,
+                    "has_media": False,
+                    "media_downloaded": False,
+                    "source": "Monitor-RSS"
+                }
 
-            if scrape_comments_flag:
-                print(f"   💬 Fetching comments for: {p['title'][:40]}...")
-                add_proxy()
-                temp_comments = scrape_comments(p['permalink'].rstrip("/"), max_depth=5)
-                comments.extend(temp_comments)
-                p['num_comments']=len(temp_comments)
+                if scrape_comments_flag:
+                    print(f"   💬 Fetching comments for: {p['title'][:40]}...")
+                    add_proxy()
+                    temp_comments = scrape_comments(p['permalink'].rstrip("/"), max_depth=5)
+                    comments.extend(temp_comments)
+                    p['num_comments']=len(temp_comments)
 
-            posts.append(p)
+                posts.append(p)
 
-        if csv_output:
-            # Flag to disable csv output (default = True)
-            dirs = setup_directories(target, prefix)
-            save_posts_csv(posts, dirs["posts"])
+            if csv_output:
+                # Flag to disable csv output (default = True)
+                dirs = setup_directories(tar, prefix)
+                save_posts_csv(posts, dirs["posts"])
 
-        # Run plugins on collected data
-        if use_plugins and (posts or comments):
-            print("\n🔌 Running post-processing plugins...")
-            try:
-                from plugins import load_plugins, run_plugins
-                plugins = load_plugins()
-                if plugins:
-                    all_scraped_posts, all_scraped_comments = run_plugins(
-                        posts, comments, plugins
-                    )
-                    print(f"   ✅ Processed {len(all_scraped_posts)} posts with {len(plugins)} plugins")
-                    print(f"   ✅ Processed {len(all_scraped_comments)} comments with {len(plugins)} plugins")
-                else:
-                    print("   ⚠️ No plugins found")
-            except Exception as e:
-                print(f"   ⚠️ Plugin error: {e}")
-
-    except Exception as e:
-        print(f"❌ Monitor Error: {e}")
+            # Run plugins on collected data
+            if use_plugins and (posts or comments):
+                print("\n🔌 Running post-processing plugins...")
+                try:
+                    from plugins import load_plugins, run_plugins
+                    plugins = load_plugins()
+                    if plugins:
+                        all_scraped_posts, all_scraped_comments = run_plugins(
+                            posts, comments, plugins
+                        )
+                        print(f"   ✅ Processed {len(all_scraped_posts)} posts with {len(plugins)} plugins")
+                        print(f"   ✅ Processed {len(all_scraped_comments)} comments with {len(plugins)} plugins")
+                    else:
+                        print("   ⚠️ No plugins found")
+                except Exception as e:
+                    print(f"   ⚠️ Plugin error: {e}")
+        except Exception as e:
+            print(f"❌ Monitor Error: {e}")
+            
+        time.sleep(random.uniform(10, 20))
 
 
 def add_proxy():
