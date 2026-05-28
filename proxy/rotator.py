@@ -148,6 +148,7 @@ class ProxyRotator:
                 return []
 
             logger.info(f"📥 Fetched {len(proxies)} proxies, starting validation...")
+            random.shuffle(proxies)
 
             # Validate proxies
             validator = ProxyValidator()
