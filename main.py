@@ -807,7 +807,12 @@ def add_proxy():
         proxy_url = urlparse(proxy)
         # Extract the protocol
         print(f"Proxy used {proxy}")
-        SESSION.proxies = {proxy_url.scheme, proxy}
+        #SESSION.proxies = {proxy_url.scheme, proxy}
+        proxies = {
+            'http': proxy,
+            'https': proxy,
+        }
+        SESSION.proxies.update(proxies)
 
 # --- CLI ---
 def main():
